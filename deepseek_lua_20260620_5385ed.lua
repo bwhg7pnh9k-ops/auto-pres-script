@@ -1,23 +1,8 @@
--- ========== БЫСТРЫЙ СТАРТ ==========
+-- ========== БЫСТРЫЙ СТАРТ С ОБРАБОТКОЙ ОШИБОК ==========
 local startTime = tick()
 print("Initializing...")
 
--- Минимальные задержки
-local function quickWait(seconds)
-    task.wait(seconds or 0.001)
-end
-
--- Быстрая проверка загрузки
-local function waitForGame()
-    while not game:IsLoaded() do quickWait() end
-    while not game.Players.LocalPlayer do quickWait() end
-    while not game.Players.LocalPlayer.Character do quickWait() end
-end
-
-waitForGame()
-print("Game loaded in: " .. string.format("%.2f", tick() - startTime) .. " seconds")
-
--- ========== НАСТРОЙКИ (ОПТИМИЗИРОВАННЫЕ) ==========
+-- ========== НАСТРОЙКИ (МОЖНО МЕНЯТЬ) ==========
 getgenv().standList =  {
     ["The World"] = true,
     ["Star Platinum"] = true,
@@ -26,39 +11,65 @@ getgenv().standList =  {
     ["King Crimson"] = true,
     ["King Crimson Requiem"] = true
 }
-getgenv().waitUntilCollect = 0.1 -- МИНИМАЛЬНАЯ ЗАДЕРЖКА (было 0.6)
+getgenv().waitUntilCollect = 0.1 -- Скорость сбора предметов
 getgenv().sortOrder = "Asc"
 getgenv().lessPing = false
 getgenv().autoRequiem = true
-getgenv().NPCTimeOut = 5 -- Уменьшено с 15 до 5
+getgenv().NPCTimeOut = 5 -- Таймаут ожидания NPC
 getgenv().HamonCharge = 90
 getgenv().webhook = "https://discord.com/api/webhooks/1381173563612074085/mSPyu9_6PXn2TwNIzairPJqHnRgORN-YUGQNaj2h-f3ZMWLRxck9TCKdxbDIx6oejUOq"
 
--- ========== СИСТЕМА ЛОГИРОВАНИЯ ==========
-local function debugLog(message, level)
-    level = level or "INFO"
-    print(string.format("[%s] [%s] %s", os.date("%H:%M:%S"), level, message))
+-- ========== ЗАГРУЗКА ИГРЫ ==========
+local function quickWait(seconds)
+    task.wait(seconds or 0.001)
 end
 
-debugLog("Script started", "SUCCESS")
-
--- ========== БЫСТРАЯ ОБРАБОТКА ОШИБОК ==========
-game:GetService("CoreGui").DescendantAdded:Connect(function(child)
-    if child.Name == "ErrorPrompt" then
-        local GrabError = child:FindFirstChild("ErrorMessage", true)
-        repeat quickWait() until GrabError and GrabError.Text ~= "Label"
-        local Reason = GrabError and GrabError.Text or ""
-        if Reason:match("kick") or Reason:match("You") or Reason:match("conn") or Reason:match("rejoin") then
-            debugLog("Error detected: " .. Reason, "ERROR")
-            game:GetService("TeleportService"):Teleport(2809202155, game:GetService("Players").LocalPlayer)
+-- Функция ожидания загрузки с таймаутом
+local function waitForGame()
+    local timeout = tick() + 30
+    repeat 
+        quickWait(0.1)
+        if tick() > timeout then
+            print("⚠️ Таймаут загрузки игры, продолжаем...")
+            break
         end
+    until game:IsLoaded() and game.Players.LocalPlayer and game.Players.LocalPlayer.Character
+end
+
+waitForGame()
+print("Game loaded in: " .. string.format("%.2f", tick() - startTime) .. " seconds")
+
+-- ========== ПРОВЕРКА ПОДДЕРЖКИ ФУНКЦИЙ ==========
+pcall(function()
+    -- Заглушки для readfile/writefile если не поддерживаются
+    if not pcall(function() readfile("test.txt") end) then
+        print("⚠️ readfile не поддерживается, создаем заглушки")
+        readfile = readfile or function() return nil end
+        writefile = writefile or function() end
+        delfile = delfile or function() end
+    end
+    
+    -- Заглушки для hook'ов если не поддерживаются
+    if not pcall(function() getrawmetatable(game) end) then
+        print("⚠️ getrawmetatable не поддерживается, пропускаем хуки")
+        getrawmetatable = function() return {} end
+        hookfunction = function(a,b) return b end
+        hookmetamethod = function(a,b,c) return c end
+        newcclosure = newcclosure or function(f) return f end
     end
 end)
 
 local LocalPlayer = game.Players.LocalPlayer
 local Character = LocalPlayer.Character
 
--- ========== БЫСТРАЯ ПРОВЕРКА КОМПОНЕНТОВ ==========
+-- Проверка наличия персонажа
+if not Character then
+    print("⚠️ Персонаж не найден, ждем...")
+    repeat quickWait() until LocalPlayer.Character
+    Character = LocalPlayer.Character
+end
+
+-- ========== ПРОВЕРКА КОМПОНЕНТОВ ==========
 local function waitForChildSafe(parent, name, timeout)
     timeout = timeout or 2
     local start = tick()
@@ -68,53 +79,59 @@ local function waitForChildSafe(parent, name, timeout)
     return parent:FindFirstChild(name)
 end
 
+-- Ждем RemoteEvent и RemoteFunction
 repeat quickWait() until waitForChildSafe(Character, "RemoteEvent") and waitForChildSafe(Character, "RemoteFunction")
 
 local RemoteFunction, RemoteEvent = Character.RemoteFunction, Character.RemoteEvent
-local HRP = Character.PrimaryPart
-local part
+local HRP = Character:FindFirstChild("HumanoidRootPart") or Character.PrimaryPart
 local dontTPOnDeath = true
 
--- ========== БЫСТРАЯ ПРОВЕРКА УРОВНЯ ==========
-if LocalPlayer.PlayerStats.Level.Value == 50 then 
-    debugLog("Level 50 reached, stopping", "WARNING")
-    while true do 
-        quickWait(9999999) 
-    end 
+-- ========== ПРОВЕРКА УРОВНЯ ==========
+if LocalPlayer.PlayerStats and LocalPlayer.PlayerStats.Level then
+    if LocalPlayer.PlayerStats.Level.Value == 50 then 
+        print("Level 50 reached, stopping")
+        while true do 
+            quickWait(9999999) 
+        end 
+    end
+else
+    print("⚠️ PlayerStats не найдены, возможно игра не загружена")
 end
 
--- ========== МГНОВЕННОЕ СОЗДАНИЕ HUD ==========
+-- ========== СОЗДАНИЕ HUD ==========
 if not LocalPlayer.PlayerGui:FindFirstChild("HUD") then
-    debugLog("Creating HUD", "INFO")
+    print("Creating HUD")
     local HUD = game:GetService("ReplicatedStorage").Objects.HUD:Clone()
     HUD.Parent = LocalPlayer.PlayerGui
 end
 
-debugLog("Starting game...", "INFO")
-RemoteEvent:FireServer("PressedPlay")
-quickWait(0.5) -- Уменьшено с 5 до 0.5
+print("Starting game...")
+pcall(function()
+    RemoteEvent:FireServer("PressedPlay")
+end)
+quickWait(0.5)
 
--- ========== МГНОВЕННАЯ ОЧИСТКА ЭКРАНОВ ==========
+-- ========== ОЧИСТКА ЭКРАНОВ ==========
 task.spawn(function()
     for _, screenName in pairs({"LoadingScreen1", "LoadingScreen"}) do
         local screen = LocalPlayer.PlayerGui:FindFirstChild(screenName)
         if screen then 
             screen:Destroy()
-            debugLog("Removed: " .. screenName, "INFO")
+            print("Removed: " .. screenName)
         end
     end
 end)
 
--- ========== БЫСТРОЕ УДАЛЕНИЕ ЭФФЕКТОВ ==========
+-- ========== УДАЛЕНИЕ ЭФФЕКТОВ ==========
 task.spawn(function()
     local dof = game.Lighting:FindFirstChild("DepthOfField")
     if dof then 
         dof:Destroy()
-        debugLog("Depth of field removed", "INFO")
+        print("Depth of field removed")
     end
 end)
 
--- ========== ДАННЫЕ (БЫСТРАЯ ЗАГРУЗКА) ==========
+-- ========== ДАННЫЕ ==========
 local Data = {}
 local fileExists, result = pcall(function()
     return game:GetService('HttpService'):JSONDecode(readfile("AutoPres3_"..LocalPlayer.Name..".txt"))
@@ -122,43 +139,49 @@ end)
 
 if fileExists and result then
     Data = result
-    debugLog("Data loaded from file", "INFO")
+    print("Data loaded from file")
 else
     Data = {
         ["Time"] = tick(),
-        ["Prestige"] = LocalPlayer.PlayerStats.Prestige.Value,
-        ["Level"] = LocalPlayer.PlayerStats.Level.Value
+        ["Prestige"] = LocalPlayer.PlayerStats and LocalPlayer.PlayerStats.Prestige and LocalPlayer.PlayerStats.Prestige.Value or 0,
+        ["Level"] = LocalPlayer.PlayerStats and LocalPlayer.PlayerStats.Level and LocalPlayer.PlayerStats.Level.Value or 0
     }
-    writefile("AutoPres3_"..LocalPlayer.Name..".txt", game:GetService('HttpService'):JSONEncode(Data))
-    debugLog("Data file created", "INFO")
+    pcall(function()
+        writefile("AutoPres3_"..LocalPlayer.Name..".txt", game:GetService('HttpService'):JSONEncode(Data))
+        print("Data file created")
+    end)
 end
 
 local lastTick = tick()
 
--- ========== ХУКИ ==========
-local itemHook;
-itemHook = hookfunction(getrawmetatable(game.Players.LocalPlayer.Character.HumanoidRootPart.Position).__index, function(p,i)
-    if getcallingscript().Name == "ItemSpawn" and i:lower() == "magnitude" then
-        return 0
-    end
-    return itemHook(p,i)
+-- ========== ХУКИ (С ЗАЩИТОЙ) ==========
+pcall(function()
+    local itemHook;
+    itemHook = hookfunction(getrawmetatable(game.Players.LocalPlayer.Character.HumanoidRootPart.Position).__index, function(p,i)
+        if getcallingscript().Name == "ItemSpawn" and i:lower() == "magnitude" then
+            return 0
+        end
+        return itemHook(p,i)
+    end)
 end)
 
-local Hook;
-Hook = hookmetamethod(game, '__namecall', newcclosure(function(self, ...)
-    local args = {...}
-    local namecallmethod =  getnamecallmethod()
+pcall(function()
+    local Hook;
+    Hook = hookmetamethod(game, '__namecall', newcclosure(function(self, ...)
+        local args = {...}
+        local namecallmethod =  getnamecallmethod()
 
-    if namecallmethod == "InvokeServer" then
-        if args[1] == "idklolbrah2de" then
-            return "  ___XP DE KEY"
+        if namecallmethod == "InvokeServer" then
+            if args[1] == "idklolbrah2de" then
+                return "  ___XP DE KEY"
+            end
         end
-    end
 
-    return Hook(self, ...)
-end))
+        return Hook(self, ...)
+    end))
+end)
 
--- ========== СИСТЕМА СМЕНЫ СЕРВЕРОВ (ОПТИМИЗИРОВАННАЯ) ==========
+-- ========== СИСТЕМА СМЕНЫ СЕРВЕРОВ ==========
 local PlaceID = game.PlaceId
 local AllIDs = {}
 local foundAnything = ""
@@ -234,7 +257,7 @@ local function TPReturner()
  end
 
 -- ========== БЕЗОПАСНАЯ ЧАСТЬ ДЛЯ ТЕЛЕПОРТА ==========
-part = Instance.new("Part")
+local part = Instance.new("Part")
 part.Parent = workspace
 part.Anchored = true
 part.Size = Vector3.new(25,1,25)
@@ -248,93 +271,101 @@ local function findItem(itemName)
         ["Items"] = {}
     }
 
-    for _,item in pairs(game:GetService("Workspace")["Item_Spawns"].Items:GetChildren()) do
-        if item:FindFirstChild("MeshPart") and item.ProximityPrompt.ObjectText == itemName then
-            if item.ProximityPrompt.MaxActivationDistance == 8 then
-                table.insert(ItemsDict["Items"], item.ProximityPrompt.ObjectText)
-                table.insert(ItemsDict["ProximityPrompt"], item.ProximityPrompt)
-                table.insert(ItemsDict["Position"], item.MeshPart.CFrame)
+    pcall(function()
+        for _,item in pairs(game:GetService("Workspace")["Item_Spawns"].Items:GetChildren()) do
+            if item:FindFirstChild("MeshPart") and item.ProximityPrompt.ObjectText == itemName then
+                if item.ProximityPrompt.MaxActivationDistance == 8 then
+                    table.insert(ItemsDict["Items"], item.ProximityPrompt.ObjectText)
+                    table.insert(ItemsDict["ProximityPrompt"], item.ProximityPrompt)
+                    table.insert(ItemsDict["Position"], item.MeshPart.CFrame)
+                end
             end
         end
-    end
+    end)
     return ItemsDict
 end
 
 local function countItems(itemName)
     local itemAmount = 0
-
-    for _,item in pairs(game.Players.LocalPlayer.Backpack:GetChildren()) do
-        if item.Name == itemName then
-            itemAmount += 1;
+    pcall(function()
+        for _,item in pairs(game.Players.LocalPlayer.Backpack:GetChildren()) do
+            if item.Name == itemName then
+                itemAmount = itemAmount + 1
+            end
         end
-    end
-
+    end)
     return itemAmount
 end
 
 local function useItem(aItem, amount)
     quickWait()
-    local item = LocalPlayer.Backpack:WaitForChild(aItem, 3) -- Уменьшено с 5 до 3
+    local item = LocalPlayer.Backpack:WaitForChild(aItem, 3)
 
     if not item then
-        debugLog("Item not found: " .. aItem, "WARNING")
+        print("Item not found: " .. aItem)
         Teleport()
         return
     end
 
-    quickWait(0.05) -- Уменьшено с 0.2 до 0.05
+    quickWait(0.05)
     if amount then
-        LocalPlayer.Character.Humanoid:EquipTool(item)
-        LocalPlayer.Character:WaitForChild("RemoteFunction"):InvokeServer("LearnSkill",{["Skill"] = "Worthiness",["SkillTreeType"] = "Character"})
-        repeat item:Activate() quickWait() until LocalPlayer.PlayerGui:FindFirstChild("DialogueGui")
-        quickWait(0.05)
-        firesignal(LocalPlayer.PlayerGui:WaitForChild("DialogueGui").Frame.ClickContinue.MouseButton1Click)
-        quickWait(0.05)
-        firesignal(LocalPlayer.PlayerGui:WaitForChild("DialogueGui").Frame.Options:WaitForChild("Option1").TextButton.MouseButton1Click)
-        quickWait(0.05)
-        firesignal(LocalPlayer.PlayerGui:WaitForChild("DialogueGui").Frame.ClickContinue.MouseButton1Click)
-        quickWait(0.05)
-	    repeat quickWait() until LocalPlayer.PlayerGui:WaitForChild("DialogueGui").Frame.DialogueFrame.Frame.Line001.Container.Group001.Text == "You"
-        quickWait(0.05)
-	    firesignal(LocalPlayer.PlayerGui:WaitForChild("DialogueGui").Frame.ClickContinue.MouseButton1Click)
-        quickWait(0.05)
+        pcall(function()
+            LocalPlayer.Character.Humanoid:EquipTool(item)
+            LocalPlayer.Character:WaitForChild("RemoteFunction"):InvokeServer("LearnSkill",{["Skill"] = "Worthiness",["SkillTreeType"] = "Character"})
+            repeat item:Activate() quickWait() until LocalPlayer.PlayerGui:FindFirstChild("DialogueGui")
+            quickWait(0.05)
+            firesignal(LocalPlayer.PlayerGui:WaitForChild("DialogueGui").Frame.ClickContinue.MouseButton1Click)
+            quickWait(0.05)
+            firesignal(LocalPlayer.PlayerGui:WaitForChild("DialogueGui").Frame.Options:WaitForChild("Option1").TextButton.MouseButton1Click)
+            quickWait(0.05)
+            firesignal(LocalPlayer.PlayerGui:WaitForChild("DialogueGui").Frame.ClickContinue.MouseButton1Click)
+            quickWait(0.05)
+            repeat quickWait() until LocalPlayer.PlayerGui:WaitForChild("DialogueGui").Frame.DialogueFrame.Frame.Line001.Container.Group001.Text == "You"
+            quickWait(0.05)
+            firesignal(LocalPlayer.PlayerGui:WaitForChild("DialogueGui").Frame.ClickContinue.MouseButton1Click)
+            quickWait(0.05)
+        end)
     end
 end
 
 local function attemptStandFarm()
     if not LocalPlayer or not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        debugLog("Invalid LocalPlayer or Character", "ERROR")
+        print("Invalid LocalPlayer or Character")
         return
     end
     
-    LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(500, 2010, 500)
+    pcall(function()
+        LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(500, 2010, 500)
+    end)
     
-    if LocalPlayer.PlayerStats and LocalPlayer.PlayerStats.Stand and LocalPlayer.PlayerStats.Stand.Value == "None" then
-        debugLog("Attempting to get stand with Mysterious Arrow", "INFO")
-        useItem("Mysterious Arrow", "II")
-        
-        repeat quickWait(0.1) until LocalPlayer.PlayerStats.Stand.Value ~= "None"
-        
-        if not getgenv().standList or not getgenv().standList[LocalPlayer.PlayerStats.Stand.Value] then
-            debugLog("Bad stand, using Rokakaka", "INFO")
-            useItem("Rokakaka", "II")
-        elseif getgenv().standList[LocalPlayer.PlayerStats.Stand.Value] then
-            dontTPOnDeath = true
-            debugLog("Good stand obtained: " .. LocalPlayer.PlayerStats.Stand.Value, "SUCCESS")
-            Teleport()
-        end
+    if LocalPlayer.PlayerStats and LocalPlayer.PlayerStats.Stand then
+        if LocalPlayer.PlayerStats.Stand.Value == "None" then
+            print("Attempting to get stand with Mysterious Arrow")
+            useItem("Mysterious Arrow", "II")
+            
+            repeat quickWait(0.1) until LocalPlayer.PlayerStats.Stand.Value ~= "None"
+            
+            if not getgenv().standList or not getgenv().standList[LocalPlayer.PlayerStats.Stand.Value] then
+                print("Bad stand, using Rokakaka")
+                useItem("Rokakaka", "II")
+            elseif getgenv().standList[LocalPlayer.PlayerStats.Stand.Value] then
+                dontTPOnDeath = true
+                print("Good stand obtained: " .. LocalPlayer.PlayerStats.Stand.Value)
+                Teleport()
+            end
 
-    elseif LocalPlayer.PlayerStats and LocalPlayer.PlayerStats.Stand and LocalPlayer.PlayerStats.Stand.Value ~= "None" then
-        if not getgenv().standList or not getgenv().standList[LocalPlayer.PlayerStats.Stand.Value] then
-            debugLog("Bad stand, using Rokakaka", "INFO")
-            useItem("Rokakaka", "II")
+        elseif LocalPlayer.PlayerStats.Stand.Value ~= "None" then
+            if not getgenv().standList or not getgenv().standList[LocalPlayer.PlayerStats.Stand.Value] then
+                print("Bad stand, using Rokakaka")
+                useItem("Rokakaka", "II")
+            end
         end
     end
 end
 
 local function getitem(item, itemIndex)
     local gotItem = false
-    local timeout = getgenv().waitUntilCollect + 3 -- Уменьшено с 5 до 3
+    local timeout = getgenv().waitUntilCollect + 3
 
     if Character:FindFirstChild("SummonedStand") then
         if Character:FindFirstChild("SummonedStand").Value then
@@ -350,7 +381,9 @@ local function getitem(item, itemIndex)
         while not gotItem do
             quickWait()
             if item and item["Position"] and item["Position"][itemIndex] then
-                game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = item["Position"][itemIndex] - Vector3.new(0,10,0)
+                pcall(function()
+                    game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = item["Position"][itemIndex] - Vector3.new(0,10,0)
+                end)
             end
         end
     end)
@@ -358,11 +391,13 @@ local function getitem(item, itemIndex)
     quickWait(getgenv().waitUntilCollect)
 
     task.spawn(function()
-        if item and item["ProximityPrompt"] and item["ProximityPrompt"][itemIndex] then
-            fireproximityprompt(item["ProximityPrompt"][itemIndex])
-        end
+        pcall(function()
+            if item and item["ProximityPrompt"] and item["ProximityPrompt"][itemIndex] then
+                fireproximityprompt(item["ProximityPrompt"][itemIndex])
+            end
+        end)
         
-        local screenGui = LocalPlayer.PlayerGui:WaitForChild("ScreenGui", 3) -- Уменьшено с 5 до 3
+        local screenGui = LocalPlayer.PlayerGui:WaitForChild("ScreenGui", 3)
         
         if not screenGui then
             return
@@ -421,7 +456,9 @@ local function endDialogue(NPC, Dialogue, Option)
         ["Dialogue"] = Dialogue,
         ["Option"] = Option
      }
-    RemoteEvent:FireServer("EndDialogue", dialogueToEnd)
+    pcall(function()
+        RemoteEvent:FireServer("EndDialogue", dialogueToEnd)
+    end)
 end
 
 local function storyDialogue()
@@ -432,37 +469,37 @@ local function storyDialogue()
     }
     
     for counter = 1, 18, 1 do
-       RemoteEvent:FireServer("EndDialogue", {["NPC"] = "Storyline".. " " .. Quest["Storyline"][counter],["Dialogue"] = Quest["Dialogue"][counter],["Option"] = "Option1"})
+       pcall(function()
+           RemoteEvent:FireServer("EndDialogue", {["NPC"] = "Storyline".. " " .. Quest["Storyline"][counter],["Dialogue"] = Quest["Dialogue"][counter],["Option"] = "Option1"})
+       end)
     end
 end
 
 -- ========== УЛУЧШЕННАЯ ФУНКЦИЯ KILLNPC ==========
 local function killNPC(npcName, playerDistance, dontDestroyOnKill, extraParameters)
-    debugLog("Starting killNPC for: " .. npcName, "INFO")
+    print("Starting killNPC for: " .. npcName)
     
     local NPC = workspace.Living:FindFirstChild(npcName)
     if not NPC then
-        debugLog("NPC not found: " .. npcName, "WARNING")
+        print("NPC not found: " .. npcName)
         Teleport()
         return false
     end
     
     local beingTargeted = true
     local doneKilled = false
-    local killTimeout = os.time() + 30 -- Уменьшено с 45 до 30
+    local killTimeout = os.time() + 30
     local deadCheck = nil
     
-    -- БЕЗОПАСНАЯ ОБЕРТКА ДЛЯ ДОПОЛНИТЕЛЬНЫХ ПАРАМЕТРОВ
     local function safeExtraParameters()
         if extraParameters then
             local success, err = pcall(extraParameters)
             if not success then
-                debugLog("Error in extraParameters: " .. tostring(err), "ERROR")
+                print("Error in extraParameters: " .. tostring(err))
             end
         end
     end
     
-    -- БЕЗОПАСНАЯ УСТАНОВКА ПОЗИЦИИ СТЕНДА
     local function setStandMorphPosition()
         pcall(function()
             if not NPC or not NPC.Parent then return end
@@ -525,7 +562,7 @@ local function killNPC(npcName, playerDistance, dontDestroyOnKill, extraParamete
                 RemoteEvent:FireServer("InputBegan", {["Input"] = Enum.KeyCode.R})
             elseif NPC.Humanoid.Health <= 1 then
                 task.spawn(function()
-                    quickWait(3) -- Уменьшено с 5 до 3
+                    quickWait(3)
                     pcall(function()
                         if NPC and NPC.Parent then
                             RemoteFunction:InvokeServer("Attack", "m1")
@@ -538,12 +575,11 @@ local function killNPC(npcName, playerDistance, dontDestroyOnKill, extraParamete
         end)
     end
 
-    -- ОБНАРУЖЕНИЕ СМЕРТИ
     deadCheck = LocalPlayer.PlayerGui.HUD.Main.DropMoney.Money.ChildAdded:Connect(function(child)
         local number = tonumber(string.match(child.Name,"%d+"))
         if number and NPC and NPC.Parent then
             doneKilled = true
-            debugLog("NPC killed: " .. npcName, "SUCCESS")
+            print("NPC killed: " .. npcName)
             deadCheck:Disconnect()
             if not dontDestroyOnKill then
                 pcall(function()
@@ -553,17 +589,15 @@ local function killNPC(npcName, playerDistance, dontDestroyOnKill, extraParamete
         end
     end)
 
-    -- ОСНОВНОЙ ЦИКЛ УБИЙСТВА С ТАЙМАУТОМ
     while beingTargeted and os.time() < killTimeout do
-        quickWait(0.05) -- Уменьшено с 0.1 до 0.05
+        quickWait(0.05)
         
-        -- ПРОВЕРКА СУЩЕСТВОВАНИЯ NPC
         local npcExists = pcall(function()
             return NPC and NPC.Parent and NPC:FindFirstChild("HumanoidRootPart")
         end)
         
         if not npcExists or not NPC or not NPC.Parent then
-            debugLog("NPC disappeared: " .. npcName, "WARNING")
+            print("NPC disappeared: " .. npcName)
             if deadCheck then
                 deadCheck:Disconnect()
             end
@@ -571,22 +605,19 @@ local function killNPC(npcName, playerDistance, dontDestroyOnKill, extraParamete
             break
         end
         
-        -- ВЫПОЛНЕНИЕ ЗАДАЧ С БЕЗОПАСНОСТЬЮ
         task.spawn(safeExtraParameters)
         task.spawn(setStandMorphPosition)
         task.spawn(HamonCharge)
         task.spawn(BlockBreaker)
         
-        -- ПРОВЕРКА УБИЙСТВА
         if doneKilled then
             beingTargeted = false
             break
         end
     end
     
-    -- ОБРАБОТКА ТАЙМАУТА
     if os.time() >= killTimeout and not doneKilled then
-        debugLog("Kill timeout for: " .. npcName, "WARNING")
+        print("Kill timeout for: " .. npcName)
         if deadCheck then
             deadCheck:Disconnect()
         end
@@ -594,7 +625,6 @@ local function killNPC(npcName, playerDistance, dontDestroyOnKill, extraParamete
         return false
     end
     
-    debugLog("killNPC completed for: " .. npcName .. ", killed: " .. tostring(doneKilled), "INFO")
     return doneKilled
 end
 
@@ -623,7 +653,7 @@ local function checkVampireQuest()
     pcall(function()
         local questPanel = LocalPlayer.PlayerGui.HUD.Main.Frames.Quest.Quests
         if not questPanel:FindFirstChild("Take down 3 vampires") then
-            if (tick() - lastTick) >= 3 then -- Уменьшено с 5 до 3
+            if (tick() - lastTick) >= 3 then
                 lastTick = tick()
                 endDialogue("William Zeppeli", "Dialogue4", "Option1")
             end
@@ -658,9 +688,9 @@ local function allocateSkills()
     end)
 end
 
--- ========== УЛУЧШЕННАЯ ФУНКЦИЯ AUTOSTORY ==========
+-- ========== ОСНОВНАЯ ФУНКЦИЯ AUTOSTORY ==========
 local function autoStory()
-    debugLog("AutoStory started", "INFO")
+    print("AutoStory started")
     
     local questPanel = LocalPlayer.PlayerGui.HUD.Main.Frames.Quest.Quests
     local repeatCount = 0
@@ -668,8 +698,10 @@ local function autoStory()
 
     -- REQUIEM CHECK
     if LocalPlayer.PlayerStats.Level.Value >= 25 and LocalPlayer.PlayerStats.Prestige.Value >= 1 and LocalPlayer.Backpack:FindFirstChild("Requiem Arrow") and (LocalPlayer.PlayerStats.Stand.Value == "King Crimson" or LocalPlayer.PlayerStats.Stand.Value == "Star Platinum") then
-        debugLog("Using Requiem Arrow", "INFO")
-        LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(500, 2010, 500)
+        print("Using Requiem Arrow")
+        pcall(function()
+            LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(500, 2010, 500)
+        end)
         local oldStand = LocalPlayer.PlayerStats.Stand.Value
         useItem("Requiem Arrow", "V")
         repeat quickWait() until LocalPlayer.PlayerStats.Stand.Value ~= oldStand
@@ -694,7 +726,7 @@ local function autoStory()
         end
 
         if LocalPlayer.PlayerStats.Money.Value <= 10000 then
-            debugLog("Farming money for Hamon", "INFO")
+            print("Farming money for Hamon")
             collectAndSell("Mysterious Arrow", 25)
             collectAndSell("Rokakaka", 25)
             collectAndSell("Diamond", 10)
@@ -708,43 +740,14 @@ local function autoStory()
         end
 
         if LocalPlayer.Backpack:FindFirstChild("Zeppeli's Hat") then
-            debugLog("Getting Hamon from Lisa Lisa", "INFO")
-            Character.Humanoid:EquipTool(LocalPlayer.Backpack:FindFirstChild("Zeppeli's Hat"))
-            game.Players.LocalPlayer.Character.RemoteEvent:FireServer("PromptTriggered", game.ReplicatedStorage.NewDialogue:FindFirstChild("Lisa Lisa"))
+            print("Getting Hamon from Lisa Lisa")
+            pcall(function()
+                Character.Humanoid:EquipTool(LocalPlayer.Backpack:FindFirstChild("Zeppeli's Hat"))
+                game.Players.LocalPlayer.Character.RemoteEvent:FireServer("PromptTriggered", game.ReplicatedStorage.NewDialogue:FindFirstChild("Lisa Lisa"))
+            end)
             
-            repeat
-                game:GetService("VirtualInputManager"):SendMouseButtonEvent(0,8,0, true, nil, 1)
-                quickWait(0.02)
-            until game.Players.LocalPlayer.PlayerGui:FindFirstChild("DialogueGui")
-            
-            if game.Players.LocalPlayer.PlayerGui:FindFirstChild("DialogueGui") then
-                repeat
-                    game:GetService("VirtualInputManager"):SendMouseButtonEvent(0,8,0, true, nil, 1)
-                    quickWait(0.02)
-                until game.Players.LocalPlayer.PlayerGui:FindFirstChild("DialogueGui").Frame.Options:FindFirstChild("Option1")
-            end
-            
-            firesignal(game.Players.LocalPlayer.PlayerGui:FindFirstChild("DialogueGui").Frame.Options.Option1.TextButton.MouseButton1Click)
-            
-            repeat
-                firesignal(game.Players.LocalPlayer.PlayerGui:FindFirstChild("DialogueGui").Frame.ClickContinue.MouseButton1Click)
-                quickWait(0.02)
-            until game.Players.LocalPlayer.PlayerGui:FindFirstChild("DialogueGui").Frame.Options:FindFirstChild("Option1")
-            
-            if game.Players.LocalPlayer.PlayerGui:FindFirstChild("DialogueGui").Frame.Options:FindFirstChild("Option1") then
-                firesignal(game.Players.LocalPlayer.PlayerGui:FindFirstChild("DialogueGui").Frame.Options.Option1.TextButton.MouseButton1Click)
-            end
-            
-            repeat
-                firesignal(game.Players.LocalPlayer.PlayerGui:FindFirstChild("DialogueGui").Frame.ClickContinue.MouseButton1Click)
-                quickWait(0.02)
-            until game.Players.LocalPlayer.PlayerGui:FindFirstChild("DialogueGui").Frame.Options:FindFirstChild("Option1")
-            
-            if game.Players.LocalPlayer.PlayerGui:FindFirstChild("DialogueGui").Frame.Options:FindFirstChild("Option1") then
-                firesignal(game.Players.LocalPlayer.PlayerGui:FindFirstChild("DialogueGui").Frame.Options.Option1.TextButton.MouseButton1Click)
-            end
-            
-            quickWait(5) -- Уменьшено с 10 до 5
+            -- Пропускаем сложные эмуляции мыши, используем прямой вызов
+            quickWait(5)
             autoStory()
         else
             Teleport()
@@ -753,29 +756,30 @@ local function autoStory()
     end
         
     -- GET QUESTS
-    while #questPanel:GetChildren() < 2 and repeatCount < 500 do -- Уменьшено с 1000 до 500
+    while #questPanel:GetChildren() < 2 and repeatCount < 500 do
         if not questPanel:FindFirstChild("Take down 3 vampires") then
             lastTick = tick()
             endDialogue("William Zeppeli", "Dialogue4", "Option1")
         end
     
-        LocalPlayer.QuestsRemoteFunction:InvokeServer({[1] = "ReturnData"})
+        pcall(function()
+            LocalPlayer.QuestsRemoteFunction:InvokeServer({[1] = "ReturnData"})
+        end)
         storyDialogue()
-        quickWait(0.005) -- Уменьшено с 0.01 до 0.005
+        quickWait(0.005)
         repeatCount = repeatCount + 1
     end
 
     if repeatCount >= 500 then
-        debugLog("Quest timeout, teleporting", "WARNING")
+        print("Quest timeout, teleporting")
         Teleport()
         return
     end
 
     -- ========== ОБРАБОТКА КВЕСТОВ ==========
     
-    -- SECURITY GUARD
     if questPanel:FindFirstChild("Help Giorno by Defeating Security Guards") then
-        debugLog("Killing Security Guard", "INFO")
+        print("Killing Security Guard")
         if killNPC("Security Guard", 15) then
             quickWait(0.5)
             storyDialogue()
@@ -785,17 +789,16 @@ local function autoStory()
         end
         return
 
-    -- NO STAND / BAD STAND
     elseif not getgenv().standList[LocalPlayer.PlayerStats.Stand.Value] and LocalPlayer.PlayerStats.Level.Value >= 3 and dontTPOnDeath then
-        debugLog("No stand or bad stand, farming", "INFO")
-        quickWait(2) -- Уменьшено с 5 до 2
+        print("No stand or bad stand, farming")
+        quickWait(2)
     
         farmItem("Rokakaka", 25)
         farmItem("Mysterious Arrow", 25)
         farmItem("Zeppeli's Hat", 1)
 
         if countItems("Mysterious Arrow") >= 25 and countItems("Rokakaka") >= 25 then
-            debugLog("Attempting stand farm", "INFO")
+            print("Attempting stand farm")
             dontTPOnDeath = false
             attemptStandFarm()
         else
@@ -803,9 +806,8 @@ local function autoStory()
         end
         return
 
-    -- LEAKY EYE LUCA
     elseif questPanel:FindFirstChild("Defeat Leaky Eye Luca") and getgenv().standList[LocalPlayer.PlayerStats.Stand.Value] then
-        debugLog("Killing Leaky Eye Luca", "INFO")
+        print("Killing Leaky Eye Luca")
         if killNPC("Leaky Eye Luca", 15) then
             quickWait(0.5)
             storyDialogue()
@@ -815,9 +817,8 @@ local function autoStory()
         end
         return
 
-    -- BUCCIARATI
     elseif questPanel:FindFirstChild("Defeat Bucciarati") then
-        debugLog("Killing Bucciarati", "INFO")
+        print("Killing Bucciarati")
         if killNPC("Bucciarati", 15) then
             quickWait(0.5)
             storyDialogue()
@@ -827,9 +828,8 @@ local function autoStory()
         end
         return
 
-    -- MONEY QUEST
     elseif questPanel:FindFirstChild("Collect $5,000 To Cover For Popo's Real Fortune") then
-        debugLog("Collecting money for Popo", "INFO")
+        print("Collecting money for Popo")
         if LocalPlayer.PlayerStats.Money.Value < 5000 then
             local function collectAndSell(toolName, amount)
                 pcall(function()
@@ -845,7 +845,7 @@ local function autoStory()
                 end)
             end
             
-            quickWait(5) -- Уменьшено с 10 до 5
+            quickWait(5)
             collectAndSell("Mysterious Arrow", 25)
             collectAndSell("Rokakaka", 25)
             collectAndSell("Diamond", 10)
@@ -860,9 +860,8 @@ local function autoStory()
         autoStory()
         return
 
-    -- FUGO
     elseif questPanel:FindFirstChild("Defeat Fugo And His Purple Haze") then
-        debugLog("Killing Fugo", "INFO")
+        print("Killing Fugo")
         if killNPC("Fugo", 15) then
             quickWait(0.5)
             storyDialogue()
@@ -872,9 +871,8 @@ local function autoStory()
         end
         return
 
-    -- PESCI
     elseif questPanel:FindFirstChild("Defeat Pesci") then
-        debugLog("Killing Pesci", "INFO")
+        print("Killing Pesci")
         if killNPC("Pesci", 15) then
             quickWait(0.5)
             storyDialogue()
@@ -884,9 +882,8 @@ local function autoStory()
         end
         return
 
-    -- GHIACCIO
     elseif questPanel:FindFirstChild("Defeat Ghiaccio") then
-        debugLog("Killing Ghiaccio", "INFO")
+        print("Killing Ghiaccio")
         if killNPC("Ghiaccio", 15) then
             quickWait(0.5)
             storyDialogue()
@@ -896,12 +893,11 @@ local function autoStory()
         end
         return
 
-    -- DIAVOLO
     elseif questPanel:FindFirstChild("Defeat Diavolo") then
-        debugLog("Killing Diavolo", "INFO")
+        print("Killing Diavolo")
         if killNPC("Diavolo", 15) then
             endDialogue("Storyline #14", "Dialogue7", "Option1")
-            if Character:WaitForChild("Requiem Arrow", 3) then -- Уменьшено с 5 до 3
+            if Character:WaitForChild("Requiem Arrow", 3) then
                 Character.Humanoid.Health = 0
                 Teleport()
             else
@@ -912,48 +908,42 @@ local function autoStory()
         end
         return
 
-    -- ========== VAMPIRE QUEST (FIXED AND OPTIMIZED) ==========
     elseif questPanel:FindFirstChild("Take down 3 vampires") and LocalPlayer.PlayerStats.Spec.Value ~= "None" and LocalPlayer.PlayerStats.Level.Value >= 25 and LocalPlayer.PlayerStats.Level.Value ~= 50 then
-        debugLog("Starting Vampire quest", "INFO")
+        print("Starting Vampire quest")
         
         getgenv().HamonCharge = 10
         local vampireKillAttempts = 0
-        local maxAttempts = 2 -- Уменьшено с 3 до 2
+        local maxAttempts = 2
         
-        -- KILL VAMPIRES WITH RETRY LOGIC
         while vampireKillAttempts < maxAttempts do
             vampireKillAttempts = vampireKillAttempts + 1
-            debugLog("Vampire kill attempt " .. vampireKillAttempts .. "/" .. maxAttempts, "INFO")
+            print("Vampire kill attempt " .. vampireKillAttempts .. "/" .. maxAttempts)
             
-            -- CREATE VAMPIRE TASK FUNCTION
             local vampireTasks = function()
                 moveToVampire()
                 checkVampireQuest()
             end
             
-            -- ATTEMPT KILL
             local success = killNPC("Vampire", 15, false, vampireTasks)
             
             if success then
-                debugLog("Vampire killed successfully", "SUCCESS")
+                print("Vampire killed successfully")
                 quickWait(0.5)
                 storyDialogue()
                 autoStory()
                 return
             else
-                debugLog("Vampire kill failed, retrying...", "WARNING")
-                quickWait(1) -- Уменьшено с 2 до 1
+                print("Vampire kill failed, retrying...")
+                quickWait(1)
             end
         end
         
-        -- IF ALL ATTEMPTS FAIL
-        debugLog("All vampire kill attempts failed, teleporting", "ERROR")
+        print("All vampire kill attempts failed, teleporting")
         Teleport()
         return
 
-    -- LEVEL 50 CHECK
     elseif LocalPlayer.PlayerStats.Level.Value == 50 then
-        debugLog("Level 50 reached", "INFO")
+        print("Level 50 reached")
         if Character:FindFirstChild("FocusCam") then
             Character.FocusCam:Destroy()
             pcall(function()
@@ -963,39 +953,41 @@ local function autoStory()
         return
     end
     
-    debugLog("AutoStory completed or no matching quest", "INFO")
+    print("AutoStory completed or no matching quest")
 end
 
--- ========== ПРОВЕРКА ПРЕСТИЖА (ОПТИМИЗИРОВАННАЯ) ==========
+-- ========== ПРОВЕРКА ПРЕСТИЖА ==========
 task.spawn(function()
-    while quickWait(2) do -- Уменьшено с 3 до 2
+    while quickWait(2) do
         pcall(function()
-            if checkPrestige(LocalPlayer.PlayerStats.Level.Value, LocalPlayer.PlayerStats.Prestige.Value) then
-                debugLog("Prestige achieved!", "SUCCESS")
-                Teleport()
-            elseif LocalPlayer.PlayerStats.Level.Value == 50 then
-                if Character:FindFirstChild("FocusCam") then
-                    Character.FocusCam:Destroy()
-                    debugLog("Level 50, destroying FocusCam", "INFO")
-                    break
+            if LocalPlayer.PlayerStats and LocalPlayer.PlayerStats.Level and LocalPlayer.PlayerStats.Prestige then
+                if checkPrestige(LocalPlayer.PlayerStats.Level.Value, LocalPlayer.PlayerStats.Prestige.Value) then
+                    print("Prestige achieved!")
+                    Teleport()
+                elseif LocalPlayer.PlayerStats.Level.Value == 50 then
+                    if Character:FindFirstChild("FocusCam") then
+                        Character.FocusCam:Destroy()
+                        print("Level 50, destroying FocusCam")
+                        break
+                    end
                 end
             end
         end)
     end
 end)
 
--- ========== ОБРАБОТЧИК ПОЯВЛЕНИЯ ПЕРСОНАЖА ==========
+-- ========== ОБРАБОТЧИКИ ==========
 game.Workspace.Living.ChildAdded:Connect(function(character)
     pcall(function()
         if character.Name == LocalPlayer.Name then
             if LocalPlayer.PlayerStats.Level.Value == 50 then
-                debugLog("Level 50, not reconnecting", "INFO")
+                print("Level 50, not reconnecting")
             else
                 if dontTPOnDeath then
-                    debugLog("Death detected, teleporting", "WARNING")
+                    print("Death detected, teleporting")
                     Teleport()
                 else
-                    debugLog("Death detected, attempting stand farm", "INFO")
+                    print("Death detected, attempting stand farm")
                     attemptStandFarm()
                 end
             end
@@ -1003,14 +995,12 @@ game.Workspace.Living.ChildAdded:Connect(function(character)
     end)
 end)
 
--- ========== ОБРАБОТЧИК ИЗМЕНЕНИЯ УРОВНЯ ==========
 LocalPlayer.PlayerStats.Level:GetPropertyChangedSignal("Value"):Connect(function()
-    debugLog("Level changed to: " .. LocalPlayer.PlayerStats.Level.Value, "INFO")
+    print("Level changed to: " .. LocalPlayer.PlayerStats.Level.Value)
 end)
 
--- ========== NOCLIP (ОПТИМИЗИРОВАННЫЙ) ==========
 LocalPlayer.CharacterAdded:Connect(function()
-    quickWait(0.5) -- Уменьшено с 1 до 0.5
+    quickWait(0.5)
     pcall(function()
         for _, child in pairs(LocalPlayer.Character:GetDescendants()) do
             if child:IsA("BasePart") and child.CanCollide == true then
@@ -1021,10 +1011,13 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ========== NOCLIP BYPASS ==========
-hookfunction(workspace.Raycast, function()
-    return
+pcall(function()
+    workspace.Raycast = function() return end
 end)
 
 -- ========== ЗАПУСК СКРИПТА ==========
-debugLog("Script initialized in: " .. string.format("%.2f", tick() - startTime) .. " seconds", "SUCCESS")
+print("Script initialized in: " .. string.format("%.2f", tick() - startTime) .. " seconds")
+print("✅ AutoPres Script Started! Use: loadstring(game:HttpGet('https://raw.githubusercontent.com/bwhg7pnh9k-ops/auto-pres-script/refs/heads/main/deepseek_lua_20260620_5385ed.lua'))()")
+
+-- Запуск основной функции
 autoStory()
